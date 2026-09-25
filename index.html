@@ -140,6 +140,19 @@
   .qf{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}
   .savepill{font-size:12px;color:var(--good);opacity:0;transition:opacity .25s}
   .savepill.show{opacity:1}
+  /* ── live sync indicator ── */
+  .livetag{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;border-radius:999px;padding:4px 11px;
+    background:var(--panel-2);border:1px solid var(--line);white-space:nowrap}
+  .livetag i{width:8px;height:8px;border-radius:50%;background:var(--muted);font-style:normal;flex:none}
+  .livetag.on{border-color:color-mix(in srgb,var(--good) 55%,var(--line));color:var(--good)}
+  .livetag.on i{background:var(--good);animation:livepulse 1.8s ease-in-out infinite}
+  .livetag.wait i{background:var(--warn);animation:livepulse 1s ease-in-out infinite}
+  .livetag.err{border-color:color-mix(in srgb,var(--danger) 55%,var(--line));color:var(--danger)}
+  .livetag.err i{background:var(--danger)}
+  @keyframes livepulse{0%,100%{opacity:1}50%{opacity:.2}}
+  details summary{list-style:none}
+  details summary::-webkit-details-marker{display:none}
+  code{background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:12px}
   /* ── sticky participant CTA ── */
   .sticky{position:fixed;left:0;right:0;bottom:0;z-index:60;
     background:color-mix(in srgb,var(--panel) 94%,transparent);backdrop-filter:blur(12px);
@@ -157,7 +170,9 @@
   <div class="top-in">
     <div class="brand" id="btnHome"><div class="logo">◷</div> Meet&nbsp;Me</div>
     <div class="spacer"></div>
+    <span class="livetag hide" id="liveTag"><i></i><span id="liveTxt">Live</span></span>
     <span class="pill hide" id="roleTag"></span>
+    <button class="btn-sm btn-ghost" id="btnLive" title="Live sync settings">⚡ Live sync</button>
     <button class="btn-sm btn-ghost" id="btnTheme" title="Toggle theme">◐</button>
   </div>
 </header>
@@ -165,6 +180,10 @@
 <div class="wrap">
 <!-- ═════════════ HOME ═════════════ -->
 <section id="viewHome">
+  <div class="banner hide" id="liveSetupBanner">
+    ⚡ <span><b>Turn on live sync</b> — connect a free Firebase database once and replies land in your poll instantly. No reply codes, no merging, no email ping-pong.</span>
+    <div class="spacer"></div><button class="btn-sm btn-primary" id="btnLiveSetup">Set it up</button>
+  </div>
   <div class="hero">
     <h1>Ask everyone when they're free. Then lock it in.</h1>
     <p>Set the window you're aiming for, share one link, and watch a live heat-map of who's available. When the best time is obvious, confirm it and send the invite.</p>
@@ -250,8 +269,10 @@
     </div>
     <div class="spacer"></div>
     <button class="btn-primary" id="btnShare">🔗 Share</button>
+    <button class="btn-good hide" id="btnGoLive">⚡ Turn on live sync</button>
     <button id="btnReply">📨 Send my reply</button>
     <button class="btn-ghost" id="btnMerge">⬆ Merge a reply</button>
+    <button class="btn-ghost hide" id="btnOwnerLink" title="Open this poll as the organizer on another device">🔑 Organizer link</button>
     <button class="btn-ghost" id="btnExport">⬇ Export</button>
   </div>
 
@@ -288,7 +309,7 @@
       <div class="how">
         <div><b>Step 1</b> Add your name</div>
         <div><b>Step 2</b> Drag across the times you <i>could</i> meet</div>
-        <div><b>Step 3</b> Hit “Send my availability” — that's it</div>
+        <div id="invStep3"><b>Step 3</b> Hit “Send my availability” — that's it</div>
       </div>
     </div>
 
@@ -387,6 +408,33 @@
   </div>
 </div></dialog>
 
+<dialog id="dlgFb"><div class="dlg">
+  <h2>⚡ Live sync</h2>
+  <p class="small muted" style="margin-top:0">Connect a free Firebase Realtime Database and everyone who opens a poll link shares the same live data — availability appears the moment someone paints it. No reply codes, no merging, no emails back and forth.</p>
+  <label class="fld"><span>Realtime Database URL</span>
+    <input id="fbUrl" placeholder="https://your-project-default-rtdb.firebaseio.com" spellcheck="false" /></label>
+  <div class="small" id="fbStatus" style="margin:-8px 0 12px"></div>
+
+  <details style="margin-bottom:14px">
+    <summary class="small" style="cursor:pointer;color:var(--accent)">▸ How do I get this URL? (about 2 minutes, free)</summary>
+    <ol class="small muted" style="padding-left:18px;line-height:1.65;margin:10px 0">
+      <li>Open <a href="https://console.firebase.google.com" target="_blank" rel="noopener">console.firebase.google.com</a> and create a project (you can skip Google Analytics).</li>
+      <li>In the left menu pick <b>Build → Realtime Database → Create Database</b>, choose a location, and start in <b>test mode</b>.</li>
+      <li>At the top of the <b>Data</b> tab you'll see the URL — something like <code>https://my-project-default-rtdb.firebaseio.com</code>. Paste it in the box above.</li>
+      <li>Open the <b>Rules</b> tab, replace everything with the rules below, and hit <b>Publish</b>.</li>
+      <li>Hit <b>Save &amp; connect</b> here. Then publish this <code>index.html</code> somewhere both of you can open it (GitHub Pages, Netlify Drop, any web host) and share the poll link.</li>
+    </ol>
+    <textarea id="fbRules" rows="11" readonly spellcheck="false"></textarea>
+    <p class="small muted">Anyone holding a poll's random link can read it and add their own availability — the same trust model as an “anyone with the link” doc. <b>Confirming the final time is locked to the organizer:</b> the creator claims a secret key that the database stores write-once and never hands back, so nobody else's attempt to confirm or reopen the meeting is accepted.</p>
+  </details>
+
+  <div class="row">
+    <button class="btn-primary" id="fbSave">Save &amp; connect</button>
+    <button class="btn-ghost" id="fbOff">Turn off</button>
+    <div class="spacer"></div><button class="btn-ghost" id="fbClose">Close</button>
+  </div>
+</div></dialog>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -441,6 +489,19 @@ const getEvent=id=>loadAll()[id]||null;
 const owned=()=>{try{return new Set(JSON.parse(localStorage.getItem(LS_OWN)||"[]"));}catch(e){return new Set();}};
 const markOwned=id=>{const s=owned();s.add(id);localStorage.setItem(LS_OWN,JSON.stringify([...s]));};
 
+/* organizer keys — the secret that proves you're the person who created a poll.
+   It is written once to a read-protected node in the database; the database rules
+   then refuse any attempt to confirm or reopen a poll without it. */
+const LS_KEY="mm.keys.v1";
+const allKeys=()=>{try{return JSON.parse(localStorage.getItem(LS_KEY)||"{}");}catch(e){return {};}};
+const getKey=id=>allKeys()[id]||"";
+const setKey=(id,k)=>{const a=allKeys();a[id]=k;localStorage.setItem(LS_KEY,JSON.stringify(a));};
+function newKey(){
+  const b=new Uint8Array(18);
+  (self.crypto||{getRandomValues:a=>{for(let i=0;i<a.length;i++)a[i]=Math.floor(Math.random()*256);return a;}}).getRandomValues(b);
+  return b64e(b);
+}
+
 /* ev = {id,title,dates[],sh,eh,slot,tz,dur,created,resp:{name:{u,s[]}},final:{di,si}|null} */
 const spd=e=>(e.eh-e.sh)*60/e.slot;
 const totalSlots=e=>e.dates.length*spd(e);
@@ -450,8 +511,208 @@ function slotUtc(e,di,si){const[y,m,d]=e.dates[di].split("-").map(Number);const 
 function counts(e){const T=totalSlots(e),c=new Uint16Array(T),names=Object.keys(e.resp);
   for(const n of names)for(const i of e.resp[n].s)if(i<T)c[i]++;return{c,names};}
 
-let EV=null, ME="", MINE=new Set(), PICK=null, CACHE=null;
-const isOwner=()=>EV&&owned().has(EV.id);
+let EV=null, ME="", MINE=new Set(), PICK=null, CACHE=null, CANDS=[];
+const isOwner=()=>!!EV&&(owned().has(EV.id)||!!getKey(EV.id));
+
+/* ───────── live sync (Firebase Realtime Database over REST + server-sent events) ─────────
+   Data shape in the database:
+     /polls/{id}/meta          → {id,title,dates[],sh,eh,slot,dur,tz,created}
+     /polls/{id}/final         → {di,si,need,k} while confirmed, {off:true,k} once reopened
+     /polls/{id}/resp/{key}    → {n:name, u:updatedAt, b:availability bitmap}
+     /locks/{id}               → the organizer key. Write-once and unreadable, so only
+                                 the person who created the poll can ever send a valid
+                                 `k` — the database rejects anyone else's attempt to
+                                 confirm or reopen the meeting.
+   Each participant only ever writes their own /resp/{key} node, so two people
+   painting at the same time can never overwrite each other.                        */
+const LS_FB="mm.fburl.v1";
+const FIREBASE_DB_URL="";            /* optional: hard-code your database URL here */
+const FB_RULES=JSON.stringify({
+  rules:{
+    polls:{
+      "$id":{
+        ".read":true,
+        meta:{".write":"!data.exists()"},
+        resp:{".write":true},
+        final:{".write":"newData.child('k').val() === root.child('locks').child($id).val()"}
+      }
+    },
+    locks:{ "$id":{ ".read":false, ".write":"!data.exists()" } }
+  }
+},null,2);
+
+const CLOUD={base:"",es:null,id:null,raw:null,state:"off",retry:0,timer:null};
+const cloudUrl=()=>(localStorage.getItem(LS_FB)||FIREBASE_DB_URL||"").trim().replace(/\/+$/,"");
+function setCloudUrl(u){
+  u=(u||"").trim().replace(/\/+$/,"");
+  if(u) localStorage.setItem(LS_FB,u); else localStorage.removeItem(LS_FB);
+  CLOUD.base=u;
+}
+CLOUD.base=cloudUrl();
+const cloudReady=()=>!!CLOUD.base;
+const isLive=()=>!!(CLOUD.base&&EV&&EV.live);
+const nameKey=n=>b64e(new TextEncoder().encode(n));
+const pollPath=(id,sub)=>CLOUD.base+"/polls/"+encodeURIComponent(id)+(sub||"")+".json";
+
+function liveStatus(state,msg){
+  CLOUD.state=state;
+  const t=$("#liveTag"); if(!t)return;
+  t.classList.toggle("hide",state==="off");
+  t.classList.toggle("on",state==="live");
+  t.classList.toggle("wait",state==="connecting");
+  t.classList.toggle("err",state==="error");
+  $("#liveTxt").textContent=msg||({live:"Live",connecting:"Connecting…",error:"Offline"}[state]||"");
+}
+
+function evToRaw(e){
+  const T=totalSlots(e),resp={};
+  for(const n of Object.keys(e.resp||{}))
+    resp[nameKey(n)]={n,u:e.resp[n].u||Date.now(),b:bitsEncode(new Set(e.resp[n].s),T)};
+  return {meta:{id:e.id,title:e.title,dates:e.dates,sh:e.sh,eh:e.eh,slot:e.slot,
+                dur:e.dur||60,tz:e.tz,created:e.created||Date.now()},
+          final:e.final||null, resp};
+}
+function rawToEv(raw){
+  const m=raw&&raw.meta; if(!m||!m.dates) return null;
+  const dates=Array.isArray(m.dates)?m.dates:Object.values(m.dates);
+  const f=raw.final;
+  const e={id:m.id,title:m.title||"Untitled meeting",dates,sh:m.sh,eh:m.eh,slot:m.slot,
+           dur:m.dur||60,tz:m.tz||LOCAL_TZ,created:m.created||Date.now(),resp:{},
+           final:(f&&!f.off&&f.di!=null)?{di:f.di,si:f.si,need:f.need}:null, live:true};
+  const T=totalSlots(e);
+  for(const k of Object.keys(raw.resp||{})){
+    const r=raw.resp[k]; if(!r||!r.n) continue;
+    e.resp[r.n]={u:r.u||0,s:r.b?bitsDecode(r.b,T):[]};
+  }
+  return e;
+}
+/* apply one streamed put/patch to our local mirror of the database node */
+function applyPath(root,path,data,merge){
+  const parts=String(path).split("/").filter(Boolean);
+  if(!parts.length){
+    if(!merge) return (data===null||data===undefined)?{}:data;
+    const out=(root&&typeof root==="object")?root:{};
+    for(const k of Object.keys(data||{})) applyPath(out,"/"+k,data[k],false);
+    return out;
+  }
+  let o=(root&&typeof root==="object")?root:{};
+  const head=o;
+  for(let i=0;i<parts.length-1;i++){
+    if(!o[parts[i]]||typeof o[parts[i]]!=="object") o[parts[i]]={};
+    o=o[parts[i]];
+  }
+  const last=parts[parts.length-1];
+  if(merge&&data&&typeof data==="object"&&!Array.isArray(data)){
+    if(!o[last]||typeof o[last]!=="object") o[last]={};
+    for(const k of Object.keys(data)) applyPath(o[last],"/"+k,data[k],false);
+  }
+  else if(data===null||data===undefined) delete o[last];
+  else o[last]=data;
+  return head;
+}
+
+async function fbWrite(url,body,method){
+  if(!CLOUD.base) return false;
+  try{
+    const r=await fetch(url,{method:method||"PUT",headers:{"Content-Type":"application/json"},
+      body:body===undefined?undefined:JSON.stringify(body)});
+    if(!r.ok) throw new Error((await r.text())||r.status);
+    return true;
+  }catch(err){ console.error("live sync write failed",err); liveStatus("error","Not saved"); return false; }
+}
+const lockPath=id=>CLOUD.base+"/locks/"+encodeURIComponent(id)+".json";
+async function cloudPublish(e){
+  const raw=evToRaw(e);
+  /* claim the organizer key first — the node is write-once, so nobody can take it later */
+  if(!getKey(e.id)) setKey(e.id,newKey());
+  await fbWrite(lockPath(e.id),getKey(e.id));
+  const ok=await fbWrite(pollPath(e.id,"/meta"),raw.meta);
+  if(Object.keys(raw.resp).length) await fbWrite(pollPath(e.id,"/resp"),raw.resp,"PATCH");
+  if(e.final) await cloudPutFinal(e.id,e.final);
+  return ok;
+}
+const cloudPutResp=(id,n,slots,T)=>fbWrite(pollPath(id,"/resp/"+nameKey(n)),
+  {n,u:Date.now(),b:bitsEncode(new Set(slots),T)});
+const cloudDelResp=(id,n)=>fbWrite(pollPath(id,"/resp/"+nameKey(n)),undefined,"DELETE");
+/* confirming or reopening always carries the organizer key; the database checks it */
+const cloudPutFinal=(id,f)=>fbWrite(pollPath(id,"/final"),
+  f?{di:f.di,si:f.si,need:f.need,k:getKey(id)}:{off:true,k:getKey(id)});
+async function cloudFetch(id){
+  if(!CLOUD.base) return null;
+  try{ const r=await fetch(pollPath(id)); if(!r.ok) return null; return rawToEv(await r.json()); }
+  catch(err){ console.error(err); return null; }
+}
+
+function cloudUnsub(){
+  if(CLOUD.es){ try{CLOUD.es.close();}catch(_){} }
+  CLOUD.es=null; CLOUD.id=null; CLOUD.raw=null;
+  clearTimeout(CLOUD.timer);
+  liveStatus("off");
+}
+function cloudSub(id){
+  if(!CLOUD.base||!window.EventSource) return;
+  if(CLOUD.es&&CLOUD.id===id) return;
+  cloudUnsub();
+  CLOUD.id=id; CLOUD.raw=null;
+  liveStatus("connecting");
+  let es;
+  try{ es=new EventSource(pollPath(id)); }
+  catch(err){ console.error(err); liveStatus("error","Offline"); return; }
+  CLOUD.es=es;
+  es.onopen=()=>{ CLOUD.retry=0; liveStatus("live"); };
+  es.addEventListener("put",ev=>onCloudEvent(id,ev,false));
+  es.addEventListener("patch",ev=>onCloudEvent(id,ev,true));
+  es.addEventListener("cancel",()=>liveStatus("error","Access denied"));
+  es.addEventListener("auth_revoked",()=>liveStatus("error","Access denied"));
+  es.onerror=()=>{
+    liveStatus("error","Reconnecting…");
+    if(es.readyState===2){
+      clearTimeout(CLOUD.timer);
+      CLOUD.timer=setTimeout(()=>{ if(CLOUD.id===id){ CLOUD.es=null; cloudSub(id); } },
+        Math.min(15000,1000*Math.pow(2,CLOUD.retry++)));
+    }
+  };
+}
+function onCloudEvent(id,ev,merge){
+  if(CLOUD.id!==id) return;
+  let d; try{ d=JSON.parse(ev.data); }catch(_){ return; }
+  if(!d||typeof d.path!=="string") return;
+  liveStatus("live");
+  if(d.path==="/"&&d.data===null){
+    /* nothing in the cloud yet — if we own a local copy, seed it */
+    const local=getEvent(id);
+    if(local&&owned().has(id)){ local.live=true; saveEvent(local); cloudPublish(local); }
+    CLOUD.raw={}; return;
+  }
+  CLOUD.raw=applyPath(CLOUD.raw||{},d.path,d.data,merge);
+  const e=rawToEv(CLOUD.raw);
+  if(e) onRemoteEvent(e);
+}
+function onRemoteEvent(e){
+  /* never let an incoming snapshot stomp the marks I'm dragging right now */
+  if(ME&&drag) e.resp[ME]={u:Date.now(),s:[...MINE].sort((a,b)=>a-b)};
+  e.live=true;
+  saveEvent(e);
+  if(!EV||EV.id!==e.id){ if(!EV) renderHome(); return; }
+  const wasFinal=!!EV.final, wasDays=EV.dates.length, wasSlots=totalSlots(EV);
+  EV=e;
+  if(ME&&!drag) MINE=new Set(EV.resp[ME]?EV.resp[ME].s:[]);
+  if(!!EV.final!==wasFinal||EV.dates.length!==wasDays||totalSlots(EV)!==wasSlots) renderEvent();
+  else refreshLive();
+}
+/* lightweight re-render that keeps scroll position and the grid DOM intact */
+function refreshLive(){
+  CACHE=counts(EV); const c=CACHE, keep=PICK;
+  $("#respCount").textContent=c.names.length+" "+(c.names.length===1?"person":"people");
+  $("#legMax").textContent=c.names.length;
+  const pc=$("#evMeta .pill:last-child"); if(pc) pc.textContent="👥 "+c.names.length;
+  buildSwatches(c.names.length);
+  paintMine(); paintGroup(c); renderPeople(c); renderBest(c); updateMineUI();
+  if(keep){
+    const k=CANDS.findIndex(w=>w.di===keep.di&&w.si===keep.si&&w.need===keep.need);
+    if(k>=0) selectCand(k,true);
+  }
+}
 
 /* ───────── home: create form ───────── */
 const excluded=new Set();
@@ -507,8 +768,9 @@ function createEvent(){
   if(dur>(eh-sh)*60){toast("The daily window is shorter than the meeting");return;}
   const ev={id:Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-4),
     title:$("#fTitle").value.trim()||"Untitled meeting", dates, sh, eh, slot, dur,
-    tz:$("#fTz").value, created:Date.now(), resp:{}, final:null};
+    tz:$("#fTz").value, created:Date.now(), resp:{}, final:null, live:cloudReady()};
   saveEvent(ev); markOwned(ev.id);
+  if(ev.live) cloudPublish(ev);
   go("#/e/"+ev.id);
   setTimeout(()=>{ if(EV) $("#btnShare").click(); },350);
 }
@@ -516,8 +778,9 @@ function renderHome(){
   const all=loadAll(), ids=Object.keys(all).sort((a,b)=>(all[b].created||0)-(all[a].created||0));
   $("#evList").innerHTML = ids.length ? ids.map(id=>{const e=all[id],n=Object.keys(e.resp||{}).length;
     return `<a href="#/e/${id}"><span><b>${esc(e.title)}</b><br><span class="small muted">${e.dates.length} day(s) · ${fmtTime(e.sh*60)}–${fmtTime(e.eh*60)} · ${fmtDur(e.dur||60)}</span></span>
-      <span class="pill ${e.final?"ok":""}">${e.final?"✓ Confirmed":n+" "+(n===1?"reply":"replies")}</span></a>`;}).join("")
+      <span class="pill ${e.final?"ok":""}">${e.live?"⚡ ":""}${e.final?"✓ Confirmed":n+" "+(n===1?"reply":"replies")}</span></a>`;}).join("")
     : `<p class="small muted" style="margin:0">No polls yet — create one on the left.</p>`;
+  $("#liveSetupBanner").classList.toggle("hide", cloudReady());
 }
 
 /* ───────── event render ───────── */
@@ -540,8 +803,12 @@ function renderEvent(){
 
   $("#paneFinal").classList.toggle("hide", !EV.final);
   $("#panePoll").classList.toggle("hide", !!EV.final);
-  $("#btnReply").classList.toggle("hide", !!EV.final);
-  $("#btnMerge").classList.toggle("hide", !!EV.final || !isOwner());
+  const live=isLive();
+  $("#btnReply").classList.toggle("hide", !!EV.final || live);
+  $("#btnMerge").classList.toggle("hide", !!EV.final || !isOwner() || live);
+  $("#btnGoLive").classList.toggle("hide", live || !cloudReady() || !isOwner());
+  $("#btnOwnerLink").classList.toggle("hide", !live || !isOwner() || !getKey(EV.id));
+  if(!live) liveStatus("off");
 
   if(EV.final){ renderFinal(c); updateSticky(); return; }
 
@@ -555,6 +822,9 @@ function renderEvent(){
     $("#invTitle").textContent=`When are you free for “${EV.title}”?`;
     $("#invSub").innerHTML=`A <b>${fmtDur(EV.dur||60)}</b> meeting, somewhere in <b>${esc(span)}</b>`+
       ` · ${c.names.length} ${c.names.length===1?"person has":"people have"} replied so far. No sign-up needed.`;
+    $("#invStep3").innerHTML=live
+      ? `<b>Step 3</b> Nothing — your times save instantly and the organizer sees them live`
+      : `<b>Step 3</b> Hit “Send my availability” — that's it`;
   }
 
   const b=$("#tzBanner");
@@ -630,6 +900,7 @@ function commitMine(){
   if(!ME)return;
   EV.resp[ME]={u:Date.now(),s:[...MINE].sort((a,b)=>a-b)};
   saveEvent(EV);
+  if(isLive()) cloudPutResp(EV.id,ME,MINE,totalSlots(EV));
   CACHE=counts(EV); const c=CACHE;
   $("#respCount").textContent=c.names.length+" "+(c.names.length===1?"person":"people");
   $("#legMax").textContent=c.names.length;
@@ -666,7 +937,9 @@ function renderPeople(c){
     `<span class="chip">${n===ME?"⭐ ":""}${esc(n)} <span class="muted">${EV.resp[n].s.length}</span><button data-del="${esc(n)}" title="Remove">×</button></span>`).join("");
   el.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{
     const n=b.dataset.del; if(!confirm(`Remove ${n}'s availability?`))return;
-    delete EV.resp[n]; if(n===ME)MINE=new Set(); saveEvent(EV); renderEvent();});
+    delete EV.resp[n]; if(n===ME)MINE=new Set(); saveEvent(EV);
+    if(isLive()) cloudDelResp(EV.id,n);
+    renderEvent();});
 }
 
 /* ───────── candidate windows of meeting length ───────── */
@@ -700,9 +973,9 @@ function whoFree(w){
 }
 function renderBest(c){
   const el=$("#bestList"), max=c.names.length;
-  PICK=null; $("#btnConfirm").classList.add("hide");
+  PICK=null; CANDS=[]; $("#btnConfirm").classList.add("hide");
   if(!max){el.innerHTML=`<span class="small muted">Once people reply, the best ${fmtDur(EV.dur||60)} slots appear here.</span>`;return;}
-  const cands=candidates(c);
+  const cands=candidates(c); CANDS=cands;
   if(!cands.length){el.innerHTML=`<span class="small muted">No ${fmtDur(EV.dur||60)} block works for anyone yet. Try a shorter meeting or a wider window.</span>`;return;}
   el.innerHTML=cands.map((w,k)=>{
     const d=parseYmd(EV.dates[w.di]), miss=c.names.filter(n=>!whoFree(w).includes(n));
@@ -710,25 +983,30 @@ function renderBest(c){
       <span><b>${DOW[d.getDay()]} ${MON[d.getMonth()].slice(0,3)} ${d.getDate()}</b> · ${fmtTime(slotMinutes(EV,w.si))} – ${fmtTime(slotMinutes(EV,w.si)+w.need*EV.slot)}
       <br><span class="small muted">${w.n===max?"✓ Everyone can make it":"Can't make it: "+miss.map(esc).join(", ")}</span></span>
       <span class="score"><b style="color:var(--txt)">${w.n}/${max}</b><br>${fmtDur(w.need*EV.slot)}</span></div>`;}).join("");
-  el.querySelectorAll(".cand").forEach(it=>it.onclick=()=>{
-    const w=cands[+it.dataset.k];
-    PICK=w;
-    el.querySelectorAll(".cand").forEach(x=>x.classList.remove("sel"));
-    it.classList.add("sel");
-    highlightPick(w);
-    const btn=$("#btnConfirm");
-    btn.classList.toggle("hide", !isOwner());
-    const d=parseYmd(EV.dates[w.di]);
-    btn.textContent=`Lock in ${DOW[d.getDay()]} ${MON[d.getMonth()].slice(0,3)} ${d.getDate()}, ${fmtTime(slotMinutes(EV,w.si))} →`;
-    if(!isOwner()) toast("Only the organizer can confirm — send them your reply code");
-  });
+  if(!isOwner()) el.insertAdjacentHTML("beforeend",
+    `<p class="small muted" style="margin:6px 0 0">Only the organizer can lock in the final time — it'll appear here the moment they do.</p>`);
+  el.querySelectorAll(".cand").forEach(it=>it.onclick=()=>selectCand(+it.dataset.k));
 }
-function highlightPick(w){
+function selectCand(k,quiet){
+  const w=CANDS[k]; if(!w) return;
+  const el=$("#bestList");
+  PICK=w;
+  el.querySelectorAll(".cand").forEach(x=>x.classList.toggle("sel",+x.dataset.k===k));
+  highlightPick(w,quiet);
+  const btn=$("#btnConfirm");
+  btn.classList.toggle("hide", !isOwner());
+  const d=parseYmd(EV.dates[w.di]);
+  btn.textContent=`Lock in ${DOW[d.getDay()]} ${MON[d.getMonth()].slice(0,3)} ${d.getDate()}, ${fmtTime(slotMinutes(EV,w.si))} →`;
+  if(!isOwner()&&!quiet)
+    toast(isLive()?"Only the organizer can lock in the final time"
+                 :"Only the organizer can confirm — send them your reply code");
+}
+function highlightPick(w,noScroll){
   const S=spd(EV);
   $$("#gridGroup .cell.pick").forEach(x=>x.classList.remove("pick"));
   for(let k=0;k<w.need;k++){
     const el=$(`#gridGroup .cell[data-i="${w.di*S+w.si+k}"]`);
-    if(el){el.classList.add("pick"); if(k===0)el.scrollIntoView({block:"nearest",behavior:"smooth"});}
+    if(el){el.classList.add("pick"); if(k===0&&!noScroll)el.scrollIntoView({block:"nearest",behavior:"smooth"});}
   }
 }
 
@@ -800,8 +1078,11 @@ function updateSticky(){
   $("#stickyBar").classList.toggle("hide",!show);
   document.body.classList.toggle("has-sticky",!!show);
   if(!show) return;
+  const live=isLive();
+  $("#stickySend").classList.toggle("hide",live);
   $("#stickyCnt").innerHTML = MINE.size
-    ? `<b>${MINE.size}</b> slot${MINE.size===1?"":"s"} marked (${fmtDur(MINE.size*EV.slot)}) — saved automatically`
+    ? `<b>${MINE.size}</b> slot${MINE.size===1?"":"s"} marked (${fmtDur(MINE.size*EV.slot)}) — `+
+      (live?"the organizer can see this already ⚡":"saved automatically")
     : `Drag across the grid to mark when you're free`;
   $("#stickySend").disabled = !MINE.size;
 }
@@ -872,7 +1153,8 @@ function mergeEvent(inc){
   if(inc.final && !local.final) local.final=inc.final;
   saveEvent(local); return local;
 }
-const shareUrl=e=>location.origin+location.pathname+"#/s/"+encodeEvent(e);
+const shareUrl=e=>location.origin+location.pathname+
+  ((e.live&&CLOUD.base) ? "#/e/"+e.id : "#/s/"+encodeEvent(e));
 let dlgMail={subject:"",body:""};
 function openDlg(t,d,x,mail){
   $("#dlgTitle").textContent=t; $("#dlgDesc").textContent=d; $("#dlgText").value=x;
@@ -927,20 +1209,44 @@ function route(){
       history.replaceState(null,"","#/e/"+merged.id); return route(); }
     catch(e){ toast("That share link is invalid"); location.hash=""; return; }
   }
-  const em=h.match(/^#\/e\/([A-Za-z0-9]+)$/);
+  const em=h.match(/^#\/e\/([A-Za-z0-9]+)(?:~([A-Za-z0-9_\-]+))?$/);
   if(em){
-    const ev=getEvent(em[1]);
-    if(!ev){toast("Poll not found on this device — paste the share link instead");location.hash="";return route();}
+    const id=em[1];
+    if(em[2]){   /* organizer link — claim control of this poll on this device */
+      setKey(id,em[2]); markOwned(id);
+      history.replaceState(null,"","#/e/"+id);
+      toast("You're now the organizer for this poll on this device");
+      return route();
+    }
+    const ev=getEvent(id);
+    if(!ev){
+      if(cloudReady()){ loadFromCloud(id); return; }
+      toast("Poll not found on this device — paste the share link instead");location.hash="";return route();
+    }
     EV=ev;
     const saved=localStorage.getItem(LS_ME)||"";
     ME=saved && Object.keys(ev.resp).find(n=>n.toLowerCase()===saved.toLowerCase()) || "";
     MINE=new Set(ME&&ev.resp[ME]?ev.resp[ME].s:[]);
     $("#viewHome").classList.add("hide"); $("#viewEvent").classList.remove("hide");
-    window.scrollTo(0,0); renderEvent(); return;
+    window.scrollTo(0,0); renderEvent();
+    if(isLive()) cloudSub(id); else cloudUnsub();
+    return;
   }
+  cloudUnsub();
   EV=null; $("#roleTag").classList.add("hide"); updateSticky();
   $("#viewEvent").classList.add("hide"); $("#viewHome").classList.remove("hide");
   renderHome();
+}
+async function loadFromCloud(id){
+  liveStatus("connecting","Loading…");
+  const e=await cloudFetch(id);
+  if(!e){
+    liveStatus("off");
+    toast("That poll isn't in your live database — ask the organizer to resend the link");
+    location.hash=""; return route();
+  }
+  saveEvent(e);
+  if(location.hash==="#/e/"+id) route(); else location.hash="#/e/"+id;
 }
 
 /* ───────── wire-up ───────── */
@@ -966,13 +1272,17 @@ function initEventUI(){
     const url=shareUrl(EV);
     const local=isLocalFile();
     const note=local?"\n\nHeads up: you're running this from a local file, so this link only opens for people who have index.html saved in the same place. To share widely, publish index.html to a web address first.":"";
+    const live=isLive();
     openDlg(EV.final?"Share the confirmed event":"Share this poll",
       (EV.final?"Anyone opening this sees the final time in their own time zone and can add it to their calendar."
-              :"Send this to everyone. They mark their free times, then send you back a reply code you merge with “Merge a reply”.")+note,
+       :live?"Send this to everyone. The moment they paint their free times, it shows up on your screen — nothing to send back, nothing to merge."
+            :"Send this to everyone. They mark their free times, then send you back a reply code you merge with “Merge a reply”.")+note,
       url,
       EV.final
         ? {subject:"Confirmed: "+EV.title, body:"We're locked in for "+($("#finWhen")?.textContent||"")+".\n\nDetails + add to your calendar:\n"+url}
-        : {subject:"When are you free? "+EV.title, body:"Please mark the times you're free — takes about 30 seconds, no sign-up:\n\n"+url+"\n\nThen hit “Send my reply” and send me the code it gives you."});
+        : {subject:"When are you free? "+EV.title, body:"Please mark the times you're free — takes about 30 seconds, no sign-up:\n\n"+url+
+            (live?"\n\nThat's all — it saves as you go and I'll see it straight away."
+                 :"\n\nThen hit “Send my reply” and send me the code it gives you.")});
     webShare(EV.title,url);
   };
   $("#btnReply").onclick=()=>{
@@ -989,17 +1299,33 @@ function initEventUI(){
   $("#dlgMail").onclick=()=>{
     location.href="mailto:?subject="+encodeURIComponent(dlgMail.subject)+"&body="+encodeURIComponent(dlgMail.body);
   };
+  $("#btnOwnerLink").onclick=()=>{
+    const url=location.origin+location.pathname+"#/e/"+EV.id+"~"+getKey(EV.id);
+    openDlg("Your organizer link",
+      "Keep this one to yourself. Opening it makes that browser the organizer, so you can confirm the final time from your phone or another computer. Everyone else gets the normal share link.",
+      url,{subject:"Organizer link — "+EV.title, body:"Private organizer link for “"+EV.title+"”:\n\n"+url});
+  };
   $("#btnExport").onclick=()=>{download(EV.title.replace(/[^\w\-]+/g,"_")+".json",JSON.stringify(EV,null,2),"application/json");toast("Exported");};
 
-  $("#btnConfirm").onclick=()=>{
+  $("#btnConfirm").onclick=async()=>{
     if(!PICK)return;
-    EV.final={di:PICK.di,si:PICK.si,need:PICK.need};
-    saveEvent(EV); renderEvent();
-    toast("Locked in! Share the link so everyone gets it.");
+    if(!isOwner()){toast("Only the organizer can lock in the final time");return;}
+    const f={di:PICK.di,si:PICK.si,need:PICK.need};
+    if(isLive() && !await cloudPutFinal(EV.id,f)){
+      toast("The database turned that down — only the organizer's browser can confirm");
+      return;
+    }
+    EV.final=f; saveEvent(EV); renderEvent();
+    toast("Locked in! Everyone sees it straight away.");
     setTimeout(()=>$("#btnShare").click(),400);
   };
-  $("#btnReopen").onclick=()=>{
+  $("#btnReopen").onclick=async()=>{
+    if(!isOwner()){toast("Only the organizer can reopen this poll");return;}
     if(!confirm("Reopen the poll and un-confirm this time?"))return;
+    if(isLive() && !await cloudPutFinal(EV.id,null)){
+      toast("The database turned that down — only the organizer's browser can reopen");
+      return;
+    }
     EV.final=null; saveEvent(EV); renderEvent();
   };
   $("#btnIcs").onclick=()=>download(EV.title.replace(/[^\w\-]+/g,"_")+".ics",buildIcs(),"text/calendar");
@@ -1045,9 +1371,53 @@ function initHomeUI(){
     r.readAsText(f); e.target.value="";
   };
   $("#btnHome").onclick=()=>{ history.replaceState(null,"",location.pathname); route(); };
+  $("#btnLiveSetup").onclick=()=>$("#btnLive").click();
+}
+function initLiveUI(){
+  $("#fbRules").value=FB_RULES;
+  $("#btnLive").onclick=()=>{
+    $("#fbUrl").value=CLOUD.base;
+    $("#fbStatus").innerHTML=CLOUD.base
+      ? `<span style="color:var(--good)">✓ Live sync is on.</span> <span class="muted">Polls you create from now on sync automatically.</span>`
+      : `<span class="muted">Live sync is off — sharing still works by link and reply codes.</span>`;
+    $("#dlgFb").showModal();
+  };
+  $("#fbClose").onclick=()=>$("#dlgFb").close();
+  $("#fbOff").onclick=()=>{
+    setCloudUrl(""); cloudUnsub(); $("#dlgFb").close();
+    toast("Live sync turned off"); route();
+  };
+  $("#fbSave").onclick=async()=>{
+    const u=$("#fbUrl").value.trim().replace(/\/+$/,"");
+    if(!u){ $("#fbStatus").innerHTML=`<span style="color:var(--danger)">Paste your database URL first.</span>`; return; }
+    $("#fbStatus").innerHTML=`<span class="muted">Testing the connection…</span>`;
+    try{
+      const r=await fetch(u+"/polls/__probe__.json");
+      if(!r.ok) throw new Error("HTTP "+r.status+" — "+((await r.text())||"").slice(0,120));
+      await r.json();
+      setCloudUrl(u);
+      $("#fbStatus").innerHTML=`<span style="color:var(--good)">✓ Connected.</span>`;
+      toast("Live sync is on ⚡");
+      $("#dlgFb").close();
+      route();
+    }catch(err){
+      $("#fbStatus").innerHTML=`<span style="color:var(--danger)">✕ Couldn't reach that database.</span>
+        <span class="muted">Check the URL and make sure you published the rules below. (${esc(err.message||err)})</span>`;
+    }
+  };
+  $("#btnGoLive").onclick=async()=>{
+    if(!cloudReady()){ $("#btnLive").click(); return; }
+    toast("Publishing…");
+    const ok=await cloudPublish(EV);
+    if(!ok){ toast("Couldn't publish — check live sync settings"); return; }
+    EV.live=true; saveEvent(EV);
+    renderEvent(); cloudSub(EV.id);
+    toast("Live sync is on for this poll ⚡");
+    setTimeout(()=>$("#btnShare").click(),350);
+  };
 }
 
-initTheme(); initForm(); initHomeUI(); initEventUI();
+initTheme(); initForm(); initHomeUI(); initEventUI(); initLiveUI();
 window.addEventListener("hashchange",route);
 route();
 </script>
