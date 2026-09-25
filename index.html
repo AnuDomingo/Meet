@@ -517,31 +517,43 @@ const isOwner=()=>!!EV&&(owned().has(EV.id)||!!getKey(EV.id));
 /* ───────── live sync (Firebase Realtime Database over REST + server-sent events) ─────────
    Data shape in the database:
      /polls/{id}/meta          → {id,title,dates[],sh,eh,slot,dur,tz,created}
-     /polls/{id}/final         → {di,si,need,k} while confirmed, {off:true,k} once reopened
      /polls/{id}/resp/{key}    → {n:name, u:updatedAt, b:availability bitmap}
-     /locks/{id}               → the organizer key. Write-once and unreadable, so only
-                                 the person who created the poll can ever send a valid
-                                 `k` — the database rejects anyone else's attempt to
-                                 confirm or reopen the meeting.
+     /finals/{id}/state        → {di,si,need} once confirmed, absent while open. Readable.
+     /finals/{id}/k            → the organizer key echoed back on every write. NOT readable.
+     /locks/{id}               → the organizer key. Write-once and unreadable.
+   Confirming a time means writing /finals/{id} with a `k` that matches /locks/{id}.
+   Both of those live outside the readable poll node, because read permission in
+   Firebase cascades downwards and a child can never take back a read its parent
+   granted — so keeping the key anywhere under /polls/{id} would leak it to guests.
    Each participant only ever writes their own /resp/{key} node, so two people
    painting at the same time can never overwrite each other.                        */
 const LS_FB="mm.fburl.v1";
-const FIREBASE_DB_URL="";            /* optional: hard-code your database URL here */
+/* Baked in so everyone who opens the hosted app is connected automatically — guests
+   never have to set anything up. This is a public endpoint, not a secret: the rules
+   below mean a poll is only reachable if you know its random ID, and the organizer
+   key is write-once and unreadable, so only the creator can confirm a final time. */
+const FIREBASE_DB_URL="https://meet-me-a90fa-default-rtdb.firebaseio.com";
 const FB_RULES=JSON.stringify({
   rules:{
     polls:{
       "$id":{
         ".read":true,
         meta:{".write":"!data.exists()"},
-        resp:{".write":true},
-        final:{".write":"newData.child('k').val() === root.child('locks').child($id).val()"}
+        resp:{".write":true}
+      }
+    },
+    finals:{
+      "$id":{
+        ".write":"newData.child('k').val() === root.child('locks').child($id).val()",
+        state:{".read":true},
+        k:{".read":false}
       }
     },
     locks:{ "$id":{ ".read":false, ".write":"!data.exists()" } }
   }
 },null,2);
 
-const CLOUD={base:"",es:null,id:null,raw:null,state:"off",retry:0,timer:null};
+const CLOUD={base:"",es:null,esF:null,id:null,raw:null,fin:null,state:"off",retry:0,timer:null};
 const cloudUrl=()=>(localStorage.getItem(LS_FB)||FIREBASE_DB_URL||"").trim().replace(/\/+$/,"");
 function setCloudUrl(u){
   u=(u||"").trim().replace(/\/+$/,"");
@@ -553,6 +565,10 @@ const cloudReady=()=>!!CLOUD.base;
 const isLive=()=>!!(CLOUD.base&&EV&&EV.live);
 const nameKey=n=>b64e(new TextEncoder().encode(n));
 const pollPath=(id,sub)=>CLOUD.base+"/polls/"+encodeURIComponent(id)+(sub||"")+".json";
+const lockPath=id=>CLOUD.base+"/locks/"+encodeURIComponent(id)+".json";
+const finalPath=(id,sub)=>CLOUD.base+"/finals/"+encodeURIComponent(id)+(sub||"")+".json";
+/* the confirmed time as guests read it — the organizer key sits alongside it, unreadable */
+const finalState=f=>(f&&f.di!=null)?{di:f.di,si:f.si,need:f.need}:null;
 
 function liveStatus(state,msg){
   CLOUD.state=state;
@@ -570,15 +586,15 @@ function evToRaw(e){
     resp[nameKey(n)]={n,u:e.resp[n].u||Date.now(),b:bitsEncode(new Set(e.resp[n].s),T)};
   return {meta:{id:e.id,title:e.title,dates:e.dates,sh:e.sh,eh:e.eh,slot:e.slot,
                 dur:e.dur||60,tz:e.tz,created:e.created||Date.now()},
-          final:e.final||null, resp};
+          resp};
 }
-function rawToEv(raw){
+/* `fin` is the separately-streamed /finals/{id}/state node */
+function rawToEv(raw,fin){
   const m=raw&&raw.meta; if(!m||!m.dates) return null;
   const dates=Array.isArray(m.dates)?m.dates:Object.values(m.dates);
-  const f=raw.final;
   const e={id:m.id,title:m.title||"Untitled meeting",dates,sh:m.sh,eh:m.eh,slot:m.slot,
            dur:m.dur||60,tz:m.tz||LOCAL_TZ,created:m.created||Date.now(),resp:{},
-           final:(f&&!f.off&&f.di!=null)?{di:f.di,si:f.si,need:f.need}:null, live:true};
+           final:finalState(fin), live:true};
   const T=totalSlots(e);
   for(const k of Object.keys(raw.resp||{})){
     const r=raw.resp[k]; if(!r||!r.n) continue;
@@ -611,16 +627,21 @@ function applyPath(root,path,data,merge){
   return head;
 }
 
-async function fbWrite(url,body,method){
+async function fbWrite(url,body,method,quiet){
   if(!CLOUD.base) return false;
   try{
     const r=await fetch(url,{method:method||"PUT",headers:{"Content-Type":"application/json"},
       body:body===undefined?undefined:JSON.stringify(body)});
     if(!r.ok) throw new Error((await r.text())||r.status);
     return true;
-  }catch(err){ console.error("live sync write failed",err); liveStatus("error","Not saved"); return false; }
+  }catch(err){
+    console.error("live sync write failed",err);
+    /* quiet writes report failure to the caller instead of flagging the whole
+       connection as broken — a rejected confirm means "not allowed", not "offline" */
+    if(!quiet) liveStatus("error","Not saved");
+    return false;
+  }
 }
-const lockPath=id=>CLOUD.base+"/locks/"+encodeURIComponent(id)+".json";
 async function cloudPublish(e){
   const raw=evToRaw(e);
   /* claim the organizer key first — the node is write-once, so nobody can take it later */
@@ -634,18 +655,27 @@ async function cloudPublish(e){
 const cloudPutResp=(id,n,slots,T)=>fbWrite(pollPath(id,"/resp/"+nameKey(n)),
   {n,u:Date.now(),b:bitsEncode(new Set(slots),T)});
 const cloudDelResp=(id,n)=>fbWrite(pollPath(id,"/resp/"+nameKey(n)),undefined,"DELETE");
-/* confirming or reopening always carries the organizer key; the database checks it */
-const cloudPutFinal=(id,f)=>fbWrite(pollPath(id,"/final"),
-  f?{di:f.di,si:f.si,need:f.need,k:getKey(id)}:{off:true,k:getKey(id)});
+/* Confirming or reopening writes the whole /finals/{id} node with the organizer key
+   attached. The database compares that key against the unreadable /locks/{id} and
+   rejects the write outright if it doesn't match. Omitting `state` reopens the poll,
+   because Firebase drops null values and the node simply disappears. */
+const cloudPutFinal=(id,f)=>{
+  const k=getKey(id);
+  if(!k) return Promise.resolve(false);
+  return fbWrite(finalPath(id), f?{state:{di:f.di,si:f.si,need:f.need},k}:{k}, "PUT", true);
+};
 async function cloudFetch(id){
   if(!CLOUD.base) return null;
-  try{ const r=await fetch(pollPath(id)); if(!r.ok) return null; return rawToEv(await r.json()); }
-  catch(err){ console.error(err); return null; }
+  try{
+    const [pr,fr]=await Promise.all([fetch(pollPath(id)),fetch(finalPath(id,"/state"))]);
+    if(!pr.ok) return null;
+    return rawToEv(await pr.json(), fr.ok?await fr.json():null);
+  }catch(err){ console.error(err); return null; }
 }
 
 function cloudUnsub(){
-  if(CLOUD.es){ try{CLOUD.es.close();}catch(_){} }
-  CLOUD.es=null; CLOUD.id=null; CLOUD.raw=null;
+  for(const s of ["es","esF"]){ if(CLOUD[s]){ try{CLOUD[s].close();}catch(_){} CLOUD[s]=null; } }
+  CLOUD.id=null; CLOUD.raw=null; CLOUD.fin=null;
   clearTimeout(CLOUD.timer);
   liveStatus("off");
 }
@@ -653,17 +683,20 @@ function cloudSub(id){
   if(!CLOUD.base||!window.EventSource) return;
   if(CLOUD.es&&CLOUD.id===id) return;
   cloudUnsub();
-  CLOUD.id=id; CLOUD.raw=null;
+  CLOUD.id=id; CLOUD.raw=null; CLOUD.fin=null;
   liveStatus("connecting");
-  let es;
-  try{ es=new EventSource(pollPath(id)); }
+  let es,esF;
+  try{ es=new EventSource(pollPath(id)); esF=new EventSource(finalPath(id,"/state")); }
   catch(err){ console.error(err); liveStatus("error","Offline"); return; }
-  CLOUD.es=es;
+  CLOUD.es=es; CLOUD.esF=esF;
   es.onopen=()=>{ CLOUD.retry=0; liveStatus("live"); };
   es.addEventListener("put",ev=>onCloudEvent(id,ev,false));
   es.addEventListener("patch",ev=>onCloudEvent(id,ev,true));
   es.addEventListener("cancel",()=>liveStatus("error","Access denied"));
   es.addEventListener("auth_revoked",()=>liveStatus("error","Access denied"));
+  /* the confirmed time streams separately, since it lives outside the poll node */
+  esF.addEventListener("put",ev=>onFinalEvent(id,ev,false));
+  esF.addEventListener("patch",ev=>onFinalEvent(id,ev,true));
   es.onerror=()=>{
     liveStatus("error","Reconnecting…");
     if(es.readyState===2){
@@ -685,7 +718,15 @@ function onCloudEvent(id,ev,merge){
     CLOUD.raw={}; return;
   }
   CLOUD.raw=applyPath(CLOUD.raw||{},d.path,d.data,merge);
-  const e=rawToEv(CLOUD.raw);
+  const e=rawToEv(CLOUD.raw,CLOUD.fin);
+  if(e) onRemoteEvent(e);
+}
+function onFinalEvent(id,ev,merge){
+  if(CLOUD.id!==id) return;
+  let d; try{ d=JSON.parse(ev.data); }catch(_){ return; }
+  if(!d||typeof d.path!=="string") return;
+  CLOUD.fin=applyPath(CLOUD.fin||{},d.path,d.data,merge);
+  const e=CLOUD.raw&&rawToEv(CLOUD.raw,CLOUD.fin);
   if(e) onRemoteEvent(e);
 }
 function onRemoteEvent(e){
