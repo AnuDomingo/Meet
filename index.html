@@ -7,8 +7,8 @@
 <style>
   :root{
     --bg:#0f1117; --panel:#171a23; --panel-2:#1e2230; --line:#2a2f40;
-    --txt:#e8eaf0; --muted:#9aa2b8; --accent:#5b8cff; --accent-2:#7c5bff;
-    --good:#22c55e; --warn:#f59e0b; --danger:#ef4444;
+    --txt:#e8f5ec; --muted:#9ab8a4; --accent:#22c55e; --accent-2:#16a34a;
+    --good:#22c55e; --warn:#22c55e; --danger:#22c55e;
     --radius:14px; --shadow:0 10px 30px rgba(0,0,0,.35);
   }
   html[data-theme="light"]{
@@ -891,7 +891,7 @@ function buildSwatches(max){
 function heat(k,max){
   if(!max||!k) return "transparent";
   const t=k/max, a=(0.16+0.76*t).toFixed(3);
-  return `rgba(${Math.round(91-57*t)}, ${Math.round(140+57*t)}, ${Math.round(255-161*t)}, ${a})`;
+  return `rgba(${Math.round(34+80*t)}, ${Math.round(197+30*t)}, ${Math.round(94-28*t)}, ${a})`;
 }
 function buildGrid(root){
   const S=spd(EV), nd=EV.dates.length;
